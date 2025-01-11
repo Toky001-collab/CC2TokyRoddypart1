@@ -1,0 +1,8 @@
+---
+title: "CC2TokyRoddypart1"
+output: github_document
+---
+
+```{r}
+library(dada2); packageVersion("dada2")
+```
