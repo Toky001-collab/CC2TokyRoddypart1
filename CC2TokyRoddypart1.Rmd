@@ -180,9 +180,126 @@ physeq
 ```{r}
 sample_variables(physeq)
 ```
+```{r}
+##RELATIVE ABUNDANCE
+# Convert phyloseq object to a data frame for manual customization
+physeq_df <- psmelt(physeq)
+```
 
+```{r}
+library(tidyr)
 
+physeq_df <- physeq_df %>%
+  mutate(
+    Taxonomy = paste(Genus, Species, sep = " "),
+    Taxonomy = ifelse(is.na(Species) | Species == "", Genus, Taxonomy),
+    Taxonomy = ifelse(is.na(Genus) | Genus == "", Family, Taxonomy) # Handle missing genus
+  ) %>%
+  filter(!is.na(Taxonomy)) %>%  # Remove rows where Taxonomy is NA
+  group_by(HOST) %>%
+  mutate(
+    TotalAbundance = sum(Abundance),  # Total abundance for each HOST
+    AbundancePercent = (Abundance / TotalAbundance) * 100  # Convert to percentage
+  ) %>%
+  ungroup()  # Remove grouping for subsequent operations
 
+```
+
+```{r}
+# Generate distinct colors for each combined Taxonomy (Species or Genus)
+taxonomy_colors <- distinctColorPalette(length(unique(physeq_df$Taxonomy)))
+```
+
+```{r}
+# Créer un graphique en barres de l'abondance relative par hôte
+ggplot(physeq_df, aes(x = HOST, y = AbundancePercent, fill = Taxonomy)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = taxonomy_colors) +
+  labs(
+    title = "Abondance relative par espèce et par hôte (Ferme)",
+    x = "Hôte (Ferme)",
+    y = "Abondance relative en %",
+    fill = "Espèce"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+
+```
+```{r}
+# --- Alpha Diversité ---
+
+# Tracer la richesse alpha pour chaque réplique
+plot_richness(physeq, x = "HOST", color = "HOST", measures = c("Chao1", "Shannon", "Observed")) +
+  labs(
+    title = "Diversité alpha par hôte (Ferme) par réplique",
+    x = "Hôte (Ferme)",
+    y = "Indice de diversité"
+  )
+```
+```{r}
+# Calculer la diversité alpha pour chaque hôte
+alpha_diversity_data <- estimate_richness(physeq, measures = c("Chao1", "Shannon", "Observed")) %>%
+  mutate(HOST = sample_data(physeq)$HOST)
+
+# Calculer les moyennes de diversité alpha par hôte
+mean_alpha_diversity <- alpha_diversity_data %>%
+  group_by(HOST) %>%
+  summarize(
+    Mean_Chao1 = mean(Chao1, na.rm = TRUE),
+    Mean_Shannon = mean(Shannon, na.rm = TRUE),
+    Mean_Observed = mean(Observed, na.rm = TRUE)
+  )
+```
+
+```{r}
+# Restructurer les données pour le graphique
+alpha_long <- alpha_diversity_data %>%
+  pivot_longer(cols = c("Chao1", "Shannon", "Observed"), names_to = "Measure", values_to = "Value")
+
+mean_long <- mean_alpha_diversity %>%
+  pivot_longer(cols = c("Mean_Chao1", "Mean_Shannon", "Mean_Observed"), names_to = "Measure", values_to = "Mean_Value") %>%
+  mutate(Measure = recode(Measure, "Mean_Chao1" = "Chao1", "Mean_Shannon" = "Shannon", "Mean_Observed" = "Observed"))
+```
+
+```{r}
+# Tracer les boxplots avec les points moyens
+ggplot(alpha_long, aes(x = HOST, y = Value)) +
+  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.7) +
+  geom_point(data = mean_long, aes(x = HOST, y = Mean_Value), color = "red", size = 2) +
+  facet_wrap(~ Measure, scales = "free") +
+  labs(
+    title = "Diversité alpha moyenne par hôte (Ferme)",
+    x = "Hôte (Ferme)",
+    y = "Mesure de diversité alpha"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  )
+```
+```{r}
+# --- Beta Diversité ---
+
+# Transformer l'objet phyloseq en abondances relatives
+ps.prop <- transform_sample_counts(physeq, function(otu) otu / sum(otu))
+
+# Réaliser l'ordination NMDS en utilisant la distance de Bray-Curtis
+ord.nmds.bray <- ordinate(ps.prop, method = "NMDS", distance = "bray")
+
+# Tracer l'ordination NMDS
+plot_ordination(ps.prop, ord.nmds.bray, color = "HOST") +
+  labs(
+    title = "NMDS de Bray-Curtis",
+    x = "NMDS1",
+    y = "NMDS2",
+    fill = "Ferme (Hôte)"
+  )
+```
 
 
 
